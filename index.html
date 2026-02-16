@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Finger Connection Toggle</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+<style>
+body{
+  margin:0;
+  overflow:hidden;
+  background:black;
+}
+video{
+  display:none;
+}
+canvas{
+  position:absolute;
+  width:100vw;
+  height:100vh;
+}
+</style>
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// 🔥 Setup MediaPipe Hands
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 2,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+
+let handResults = null;
+hands.onResults(results => { handResults = results; });
+
+// 🔥 Connection System
+let connections = [];
+let touchingNow = {};
+let time = 0;
+
+// 🔥 Camera Setup
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+
+camera.start();
+
+// 🔥 Main Draw Loop
+function drawFrame() {
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if(video.readyState === 4){
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+  }
+
+  if(handResults && handResults.multiHandLandmarks){
+
+    const tipsIndex = [4,8,12,16,20];
+    let allFingertips = [];
+
+    // Collect all fingertips
+    handResults.multiHandLandmarks.forEach((hand, handId) => {
+      tipsIndex.forEach((tipId, fingerId) => {
+        const p = hand[tipId];
+        allFingertips.push({
+          id: handId + "-" + fingerId,
+          x: p.x * canvas.width,
+          y: p.y * canvas.height
+        });
+      });
+    });
+
+    // 🔥 TOUCH DETECTION + TOGGLE
+    for(let i=0; i<allFingertips.length; i++){
+      for(let j=i+1; j<allFingertips.length; j++){
+
+        const f1 = allFingertips[i];
+        const f2 = allFingertips[j];
+        const key = f1.id + "|" + f2.id;
+
+        const dx = f2.x - f1.x;
+        const dy = f2.y - f1.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if(dist < 60){  // touch sensitivity
+
+          if(!touchingNow[key]){
+            touchingNow[key] = true;
+
+            const index = connections.findIndex(c => c.key === key);
+
+            if(index === -1){
+              connections.push({key, id1:f1.id, id2:f2.id});
+            } else {
+              connections.splice(index,1);
+            }
+          }
+
+        } else {
+          touchingNow[key] = false;
+        }
+      }
+    }
+
+    // 🔥 DRAW ALL SAVED CONNECTIONS
+    connections.forEach(conn => {
+
+      const f1 = allFingertips.find(f => f.id === conn.id1);
+      const f2 = allFingertips.find(f => f.id === conn.id2);
+      if(!f1 || !f2) return;
+
+      const dx = f2.x - f1.x;
+      const dy = f2.y - f1.y;
+
+      // Neon red glowing line
+      ctx.beginPath();
+      ctx.moveTo(f1.x, f1.y);
+      ctx.lineTo(f2.x, f2.y);
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 5;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = "red";
+      ctx.stroke();
+
+      // Moving energy particle
+      const t = (time % 1);
+      const sparkX = f1.x + dx * t;
+      const sparkY = f1.y + dy * t;
+
+      ctx.beginPath();
+      ctx.arc(sparkX, sparkY, 6, 0, 2*Math.PI);
+      ctx.fillStyle = "white";
+      ctx.shadowBlur = 25;
+      ctx.shadowColor = "red";
+      ctx.fill();
+    });
+  }
+
+  time += 0.02;
+  requestAnimationFrame(drawFrame);
+}
+
+drawFrame();
+</script>
+
+</body>
+</html>
