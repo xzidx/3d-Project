@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mid-Air Finger Pen (Mirrored Fix)</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+<style>
+body { margin:0; overflow:hidden; background:black; }
+video { display:none; }
+canvas { position:absolute; width:100vw; height:100vh; }
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// MediaPipe Hands Setup
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 2,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+
+let handResults = null;
+hands.onResults(results => { handResults = results; });
+
+// Camera setup
+const camera = new Camera(video, {
+  onFrame: async () => { await hands.send({ image: video }); },
+  width: 640,
+  height: 480
+});
+camera.start();
+
+// Pen path
+let penPath = [];
+
+function drawFrame(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Mirror canvas for natural movement
+  ctx.save();
+  ctx.scale(-1,1);
+  ctx.translate(-canvas.width,0);
+
+  // Draw camera feed
+  if(video.readyState === 4){
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+  }
+
+  if(handResults && handResults.multiHandLandmarks.length > 0){
+    const hand = handResults.multiHandLandmarks[0];
+
+    const thumbTip = hand[4];
+    const indexTip = hand[8];
+
+    // Direct coordinates (do NOT flip manually)
+    const tx = indexTip.x * canvas.width; // for drawing we use index as pen
+    const ty = indexTip.y * canvas.height;
+    const ix = indexTip.x * canvas.width;
+    const iy = indexTip.y * canvas.height;
+
+    const dist = Math.hypot((thumbTip.x - indexTip.x)*canvas.width, (thumbTip.y - indexTip.y)*canvas.height);
+
+    if(dist < 40){
+      penPath.push({x: ix, y: iy});
+    } else {
+      penPath.push(null);
+    }
+
+    // Draw pen path
+    ctx.beginPath();
+    for(let i=1;i<penPath.length;i++){
+      const p1 = penPath[i-1];
+      const p2 = penPath[i];
+      if(p1 && p2){
+        ctx.moveTo(p1.x,p1.y);
+        ctx.lineTo(p2.x,p2.y);
+      }
+    }
+    ctx.strokeStyle = "cyan";
+    ctx.lineWidth = 4;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "cyan";
+    ctx.stroke();
+
+    // Fingertip indicator
+    ctx.beginPath();
+    ctx.arc(ix, iy, 10, 0, 2*Math.PI);
+    ctx.fillStyle = dist<40 ? "red" : "blue";
+    ctx.fill();
+  }
+
+  ctx.restore();
+  requestAnimationFrame(drawFrame);
+}
+
+drawFrame();
+</script>
+
+</body>
+</html>

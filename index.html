@@ -126,12 +126,12 @@ function drawFrame() {
       }
     }
 
-    // 🔥 DRAW ALL SAVED CONNECTIONS
-    connections.forEach(conn => {
-
+    // 🔥 DRAW ALL SAVED CONNECTIONS & REMOVE LOST FINGERS
+    connections = connections.filter(conn => {
       const f1 = allFingertips.find(f => f.id === conn.id1);
       const f2 = allFingertips.find(f => f.id === conn.id2);
-      if(!f1 || !f2) return;
+
+      if(!f1 || !f2) return false; // remove connection if either fingertip gone
 
       const dx = f2.x - f1.x;
       const dy = f2.y - f1.y;
@@ -157,6 +157,8 @@ function drawFrame() {
       ctx.shadowBlur = 25;
       ctx.shadowColor = "red";
       ctx.fill();
+
+      return true; // keep connection
     });
   }
 
